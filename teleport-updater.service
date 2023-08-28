@@ -1,0 +1,6 @@
+[Unit]
+Description=Teleport Updater
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/teleport-updater

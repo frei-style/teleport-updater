@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+echo "[INFO] starting teleport-updater..."
+
+source_file="sources.list.d/teleport.list"
+apt_args="-o Dir::Etc::sourcelist=${source_file?} -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0"
+dnf_args="--disablerepo=* --enablerepo=teleport"
+
+sudo="sudo"
+if [[ $(id -u) -eq 0 ]]; then
+    sudo=""
+    echo "[INFO] running as root, not using sudo on certain commands."
+else
+    echo "[INFO] running as unprivileged user, using sudo on certain commands."
+fi
+
+if [[ ! -f /etc/os-release ]]; then
+    echo "[ERROR] system incompatible. Quitting..." 1>&2
+    exit 1
+fi
+
+. /etc/os-release
+
+echo "[INFO] detected os is '${NAME}' (id: ${ID})"
+
+if [[ "${ID:-}:${ID_LIKE:-}" =~ "debian" ]]; then
+    echo "[INFO] using the package manager apt"
+
+    echo "[INFO] update package cache"
+    ${sudo?} apt update ${apt_args?}
+
+    list_upgradable="$(${sudo?} apt list --upgradable ${apt_args?} 2>&1 | grep "^teleport/")"
+
+    if [[ -z "${list_upgradable?}" ]]; then
+        # teleport is not upgradable
+        echo "[INFO] No upgrade available. Quitting..."
+        exit 0
+    fi
+
+    echo "[INFO] Starting upgrade: ${apt_list_upgradable?}"
+
+    ${sudo?} apt upgrade --yes ${apt_args?} teleport 2>&1
+elif [[ "${ID:-}:${ID_LIKE:-}" =~ "rhel" ]]; then
+    echo "[INFO] using the package manager dnf"
+
+    echo "[INFO] update package cache"
+    ${sudo?} dnf ${dnf_args} makecache
+
+    list_upgradable="$(${sudo?} dnf ${dnf_args} list --upgrades 2>&1 | grep "^teleport\.")"
+
+    if [[ -z "${list_upgradable?}" ]]; then
+        # teleport is not upgradable
+        echo "[INFO] No upgrade available. Quitting..."
+        exit 0
+    fi
+
+    echo "[INFO] Starting upgrade: ${list_upgradable?}"
+
+    ${sudo?} dnf ${dnf_args} -y upgrade 2>&1
+fi
+
+${sudo?} systemctl daemon-reload
+${sudo?} systemctl restart teleport.service
+
+sleep 3
+
+teleport_service_status="$(${sudo?} systemctl is-active teleport.service)"
+if [[ "${teleport_service_status?}" != "active" ]]; then
+    echo "[ERROR] teleport failed to start" 1>&2
+fi

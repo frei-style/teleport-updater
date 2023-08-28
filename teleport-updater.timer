@@ -1,0 +1,11 @@
+[Unit]
+Description=Start Teleport Updater daily around 04:30
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=teleport-updater.service
+
+[Install]
+WantedBy=timers.target
