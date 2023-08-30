@@ -1,5 +1,6 @@
 [Unit]
 Description=Start Teleport Updater daily around 04:30
+# This timer triggers the teleport-updater service to update the software
 
 [Timer]
 OnCalendar=*-*-* 04:30:00

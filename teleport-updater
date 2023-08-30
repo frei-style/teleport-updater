@@ -4,6 +4,7 @@ echo "[INFO] starting teleport-updater..."
 source_file="sources.list.d/teleport.list"
 apt_args="-o Dir::Etc::sourcelist=${source_file?} -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0"
 dnf_args="--disablerepo=* --enablerepo=teleport"
+backup_location="/etc/"
 
 sudo="sudo"
 if [[ $(id -u) -eq 0 ]]; then
@@ -25,6 +26,9 @@ echo "[INFO] detected os is '${NAME}' (id: ${ID})"
 if [[ "${ID:-}:${ID_LIKE:-}" =~ "debian" ]]; then
     echo "[INFO] using the package manager apt"
 
+    echo "[INFO] Backing up current Teleport installation..."
+    dpkg --get-selections | grep teleport > "${backup_location}/teleport_selections.txt"
+
     echo "[INFO] update package cache"
     ${sudo?} apt update ${apt_args?}
 
@@ -39,9 +43,18 @@ if [[ "${ID:-}:${ID_LIKE:-}" =~ "debian" ]]; then
     echo "[INFO] Starting upgrade: ${list_upgradable?}"
 
     ${sudo?} apt upgrade --yes ${apt_args?} teleport 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "[ERROR] Upgrade failed. Initiating rollback..."
+        dpkg --set-selections < "${backup_location}/teleport_selections.txt"
+        apt-get dselect-upgrade
+        failed=1
+    fi    
 elif [[ "${ID:-}:${ID_LIKE:-}" =~ "rhel" ]]; then
     echo "[INFO] using the package manager dnf"
 
+    echo "[INFO] Backing up current Teleport installation..."
+    dnf repoquery --installed teleport > "${backup_location}/teleport_installed.txt"
+    
     echo "[INFO] update package cache"
     ${sudo?} dnf ${dnf_args} makecache
 
@@ -56,6 +69,11 @@ elif [[ "${ID:-}:${ID_LIKE:-}" =~ "rhel" ]]; then
     echo "[INFO] Starting upgrade: ${list_upgradable?}"
 
     ${sudo?} dnf ${dnf_args} -y upgrade 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "[ERROR] Upgrade failed. Initiating rollback..."
+        dnf downgrade $(cat "${backup_location}/teleport_installed.txt")
+        failed=1        
+    fi    
 fi
 
 ${sudo?} systemctl daemon-reload
@@ -66,4 +84,11 @@ sleep 3
 teleport_service_status="$(${sudo?} systemctl is-active teleport.service)"
 if [[ "${teleport_service_status?}" != "active" ]]; then
     echo "[ERROR] teleport failed to start" 1>&2
+    exit 1
 fi
+
+if [[ "${failed?}" != "0" ]]; then
+    echo "[ERROR] teleport failed to upgrade" 1>&2
+    exit 1
+fi
+

@@ -1,5 +1,6 @@
 [Unit]
 Description=Teleport Updater
+# This service updates the Gravitational Teleport software
 
 [Service]
 Type=oneshot
